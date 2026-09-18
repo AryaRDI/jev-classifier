@@ -11,6 +11,7 @@
   <a href="#agent-integrations">Integrations</a> ·
   <a href="#monitoring">Monitoring</a> ·
   <a href="#settings">Settings</a> ·
+  <a href="#running-from-a-development-build">Development build</a> ·
   <a href="#reference">Reference</a>
 </p>
 
@@ -75,12 +76,13 @@ there is nothing to stop or disable. Your saved settings and logs are left in pl
 <details>
 <summary>Install from source</summary>
 
-Use this only when developing the project or testing unreleased changes:
+Use this when developing the project or testing unreleased changes. See
+[Running from a development build](#running-from-a-development-build) for the full workflow.
 
 ```sh
 git clone https://github.com/felpsdev/jev-classifier.git
 cd jev-classifier
-npm ci
+npm install
 npm run build
 node dist/cli.js setup
 ```
@@ -274,9 +276,14 @@ Start with Observe. Change modes in setup, or pass `--shadow` to observe for a r
 Enforce is the default when no mode is configured. It adds a hint instead of forcing a tool
 when confidence is low.
 
-jev-classifier keeps the full tool list in every request, so that part of the prompt cache stays
-valid. It also checks whether the requested work is done before accepting Jev's suggestion to
-respond. If classification fails, the original request continues to the model.
+jev-classifier keeps the tool catalog inside the provider's limits so large setups still route.
+Tool descriptions are shortened to 300 characters, and the conversation state is capped so a
+long session cannot exceed the provider's token budget. When the catalog has more than
+`JEV_SINGLE_STAGE_MAX` tools or groups, the proxy routes in two steps: Jev first picks the tool
+group (agent built-ins, or one group per MCP server), then the tool inside that group. Each
+step is logged with its own timing and token count. The full tool list always goes to your
+agent's model. It also checks whether the requested work is done before accepting Jev's
+suggestion to respond. If classification fails, the original request continues to the model.
 
 Codex Responses Lite always observes. Requests with duplicate tool names or
 `previous_response_id` also fall back to Observe. Check `shadowReason` in the decision log.
@@ -287,6 +294,22 @@ Codex Responses Lite always observes. Requests with duplicate tool names or
 The proxy turns the conversation into a `RouterState`, asks Jev which tool comes next and
 whether the work is done, then checks both answers. This follows
 [`jev-eval-agent`](https://github.com/vinilana/jev-eval-agent).
+
+**Single stage.** When the catalog fits in one question (at most `JEV_SINGLE_STAGE_MAX`
+tools, groups, and tools-per-group), Jev is asked once for the tool.
+
+**Two stages.** Large catalogs are split by source: agent built-ins form the `core` group and
+each MCP server forms its own group (read from the `mcp__server__tool` or `server:tool` name
+prefix). Stage 1 asks Jev to pick the group; stage 2 asks for the tool inside that group.
+This keeps every question under the provider's label limit and improves ranking accuracy,
+at the cost of a second round trip. The decision log records `group` and per-stage `stages`
+and `tokensIn`/`tokensOut`.
+
+**Provider limits.** The classifier rejects a question at about 200 labels or about 128 KB of
+state. `JEV_LABEL_HARD_MAX` (default 190) caps the label count, and `JEV_STATE_CHAR_MAX`
+(default 60000) caps the serialized state; `buildState` re-clips tool results, tool inputs,
+and the user request to fit. Labels beyond the cap are dropped and the record is marked
+`truncated`.
 
 In enforce mode, `respond_to_user` maps to `tool_choice: auto`. If confidence is below
 `MIN_CONFIDENCE`, the proxy adds a hint with the three most likely tools. The `done` gate
@@ -536,6 +559,10 @@ For Vercel, use `JEV_PROVIDER=vercel` and `AI_GATEWAY_API_KEY`. No upstream over
 | `JEV_PROXY` | `1` | `0` launches agents directly, without the Jev gateway |
 | `DONE_THRESHOLD` | `0.5` | minimum probability that the requested work is done |
 | `MIN_CONFIDENCE` | `0.5` | below this, no tool is forced |
+| `JEV_SINGLE_STAGE_MAX` | `150` | tools/groups/tools-per-group before two-stage routing |
+| `JEV_LABEL_HARD_MAX` | `190` | hard label cap per Jev question (provider rejects ~200) |
+| `JEV_STATE_CHAR_MAX` | `60000` | max serialized state chars sent to Jev |
+| `JEV_DEBUG` | `0` | `1` logs label/payload/state size per Jev call |
 | `PORT` | `8080` | proxy port |
 | `ANTHROPIC_UPSTREAM` | `https://api.anthropic.com` | upstream for `/v1/messages` |
 | `OPENAI_UPSTREAM` | `https://api.openai.com` | upstream for `/v1/responses` |
@@ -580,10 +607,17 @@ Metrics and the dashboard read the same decision JSONL. Example record:
   "upstreamMs": 2400,
   "toolsCount": 14,
   "applied": true,
+  "group": "core",
+  "stages": [ 90, 90 ],
+  "tokensIn": 2917,
+  "tokensOut": 452,
   "actual": "Edit",
   "match": true
 }
 ```
+
+`group`, `stages`, `tokensIn`, and `tokensOut` appear only when two-stage routing ran or the
+provider reported token usage.
 
 `jev-classifier serve --capture` saves requests in `.jev-classifier/captures/`.
 It removes authentication and account headers, plus query strings. Request bodies can still
@@ -598,6 +632,8 @@ contain private prompts and code. Review captures before sharing them.
 |---|---|
 | No proxy requests appear | Start the agent through `run`; confirm the gateway port and selected provider |
 | Jev is configured but classifications fail | Run `doctor --check`; inspect provider/model settings and `logs` |
+| `max_tokens_exceeded` from Jev | Run with `JEV_DEBUG=1`; lower `JEV_STATE_CHAR_MAX` or `JEV_LABEL_HARD_MAX` |
+| Running gateway ignores code changes | Restart the gateway after `npm run build`; confirm process start is newer than `dist/` |
 | Changes do not affect the running session | Restart the gateway or editor's MCP server |
 | Cursor or Antigravity has no HTTP counters | Check MCP discovery with `jev_status` and activity in `logs --decisions` |
 | Codex reports an observe-mode fallback | Responses Lite intentionally preserves requests; inspect `shadowReason` |
@@ -607,10 +643,15 @@ contain private prompts and code. Review captures before sharing them.
 
 ## Limits
 
-- Jev accepts up to 255 choices, including `respond_to_user`. Larger catalogs are shortened
-  for classification and marked `truncated`. The full tool list still goes to your agent's model.
-- Each prediction takes time. Check `jevMs` in the log and the p95 timing in metrics to see
-  how much delay Jev adds.
+- The classifier accepts up to ~200 choices per question and ~128 KB of state. Above
+  `JEV_SINGLE_STAGE_MAX`, the proxy routes in two stages (group, then tool). Labels beyond
+  `JEV_LABEL_HARD_MAX` and state beyond `JEV_STATE_CHAR_MAX` are trimmed for classification
+  and the record is marked `truncated`. The full tool list and conversation still go to your
+  agent's model.
+- Each prediction takes time. Two-stage routing makes two sequential calls. Check `jevMs`,
+  `stages`, and `tokensIn`/`tokensOut` in the log, and the p95 timing in metrics, to see how
+  much delay Jev adds. Lowering `JEV_STATE_CHAR_MAX` reduces input tokens and latency at the
+  cost of less history context.
 
 ## Development
 
@@ -620,11 +661,103 @@ npm run typecheck
 npm test
 ```
 
-CI is configured for Windows, macOS, and Linux with Node 22 and 24. Tests cover protocol forwarding,
-MCP stdio discovery and calls, configuration merging, process control, and startup-file generation.
-The new integrations were developed and tested on Windows; native macOS/Linux desktop launches
-and real Cursor/Antigravity sessions still require platform validation. OpenCode's configuration
-and mock upstream routing are tested separately from live provider inference.
+`npm test` builds first, then runs the suite with `node --test`. Tests cover protocol forwarding,
+two-stage routing and provider limit handling, MCP stdio discovery and calls, configuration
+merging, process control, and startup-file generation. CI is configured for Windows, macOS, and
+Linux with Node 22 and 24. See [Running from a development build](#running-from-a-development-build)
+to exercise the local build against a live agent.
+
+## Running from a development build
+
+The npm package is for everyday use. Run the local build when developing the project, testing
+unreleased changes, or carrying local patches that are not on npm.
+
+### One-time setup
+
+```sh
+git clone https://github.com/felpsdev/jev-classifier.git
+cd jev-classifier
+npm install
+npm run build
+node dist/cli.js setup
+```
+
+`node dist/cli.js` is the local equivalent of the `jev-classifier` command. All subcommands
+(`serve`, `run`, `status`, `logs`, `stop`, `doctor`, …) work the same.
+
+### Run the gateway
+
+```sh
+# foreground, in the current terminal
+node dist/cli.js serve --foreground --port 8080
+
+# managed (detached), then control it separately
+node dist/cli.js start
+node dist/cli.js status --watch
+node dist/cli.js stop
+```
+
+### Run an agent from your project folder
+
+Start the gateway in one terminal, then from any project directory launch the agent with the
+absolute path to the local build:
+
+```sh
+node /absolute/path/to/jev-classifier/dist/cli.js run claude
+node /absolute/path/to/jev-classifier/dist/cli.js run codex
+```
+
+This starts the agent in your project folder and routes it through the local gateway.
+
+### Optional: alias the local build
+
+Add to your shell profile (shown for zsh):
+
+```sh
+alias jev-local='node /absolute/path/to/jev-classifier/dist/cli.js'
+```
+
+Then use `jev-local run claude`, `jev-local status`, etc. from anywhere.
+
+### Rebuild after changing source
+
+```sh
+npm run build        # recompile TypeScript to dist/
+npm test             # build + run the test suite
+npm run typecheck    # type-check only
+```
+
+**Restart the gateway after every rebuild.** Node loads `dist/*.js` at startup, so a running
+gateway keeps the old code until it is restarted:
+
+```sh
+node dist/cli.js stop
+node dist/cli.js serve --foreground --port 8080
+```
+
+Confirm the running process is newer than your last build:
+
+```sh
+# process start time must be after the dist file modified time
+ps -p $(curl -s http://127.0.0.1:8080/__jev/health | python3 -c 'import json,sys;print(json.load(sys.stdin)["pid"])') -o lstart=
+stat -f '%Sm' dist/router.js
+```
+
+### Debug a Jev call
+
+```sh
+JEV_DEBUG=1 node dist/cli.js serve --foreground --port 8080
+```
+
+Each Jev call then logs its label count, payload size, and state size, which helps diagnose
+`max_tokens_exceeded` or routing problems.
+
+### Global install vs local build
+
+The global npm package and the local build share the same config directory and port. Only one
+gateway can bind port 8080 at a time. Stop the global gateway (`jev-classifier stop`) before
+starting the local one, or run the local build on a different `--port` and point the agent at
+that port.
 
 ## License
 
