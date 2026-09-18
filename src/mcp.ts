@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { chooseNextTool, RESPOND } from "./router.js";
+import { chooseNextTool, clip, RESPOND } from "./router.js";
 import { jevStatus } from "./jev.js";
 import { appendDecision } from "./log.js";
 import { recordEvent } from "./history.js";
@@ -29,7 +29,7 @@ export function createMcpServer(client: string): McpServer {
     }
     try {
       const decision = await chooseNextTool({ user_request, assistant_said,
-        actions_taken: actions_taken.map((a, i) => ({ ...a, input: a.input, step: i + 1 })) }, tools);
+        actions_taken: actions_taken.map((a, i) => ({ step: i + 1, tool: String(a.tool), input: clip(a.input ?? ""), result: clip(a.result ?? "") })) }, tools);
       appendDecision({ ts: new Date().toISOString(), agent: client, model: "mcp-advisory", session: "mcp",
         mode: "shadow", chosen: decision.tool, confidence: decision.confidence, done: decision.done, gated: decision.gated,
         truncated: decision.truncated, top3: decision.top.slice(0, 3).map(t => ({ ...t })), jevMs: decision.latencyMs,

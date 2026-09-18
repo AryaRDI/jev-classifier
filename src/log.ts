@@ -17,6 +17,10 @@ export interface DecisionRecord {
   upstreamMs: number;
   toolsCount: number;
   applied: boolean;
+  group?: string;
+  stages?: number[];
+  tokensIn?: number;
+  tokensOut?: number;
   shadowReason?: string;
   actual?: string;
   match?: boolean;
