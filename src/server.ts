@@ -164,7 +164,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, options: ServeO
   let record: DecisionRecord | undefined;
 
   try {
-    report(`Classifying ${parsed.options.length} tools / ${mode === "shadow" ? "observe" : "enforce"}`);
+    report(`Classifying | tools=${parsed.options.length} | mode=${mode === "shadow" ? "observe" : "enforce"}`);
     const decision = await chooseNextTool(parsed.state, parsed.options);
     status.classified++;
     let applied = false;
@@ -202,7 +202,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, options: ServeO
       delete agent.lastError;
       agent.lastDecision = { tool: decision.tool, mode, applied, at: record.ts };
     }
-    report(`Jev chose ${decision.tool} / confidence ${Math.round(decision.confidence * 100)}% / ${decision.latencyMs} ms / ${applied ? "applied" : "observed"}`);
+    report(`Decision | chosen=${decision.tool} | confidence=${Math.round(decision.confidence * 100)}% | jev=${decision.latencyMs}ms | result=${applied ? "applied" : mode === "shadow" ? "observed" : "hint"}`);
   } catch (err) {
     status.classificationFailures++;
     if (agent) { agent.failures++; agent.lastError = (err as Error).message; }
@@ -293,7 +293,7 @@ function finish(tap: { record: DecisionRecord; quiet?: boolean }, actual: string
     match: actual ? actual === tap.record.chosen : undefined,
   };
   appendDecision(record);
-  gatewayEvent(record.agent, `Response ended / actual=${actual ?? "no tool detected"} / ${record.match === undefined ? "no comparison" : record.match ? "matches Jev" : "differs from Jev"} / ${record.upstreamMs} ms`, false, tap.quiet);
+  gatewayEvent(record.agent, `Completed | actual=${actual ?? "none"} | match=${record.match === undefined ? "n/a" : record.match ? "yes" : "no"} | upstream=${record.upstreamMs}ms`, false, tap.quiet);
 }
 
 export function createServer(options: ServeOptions = {}): Server {

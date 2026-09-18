@@ -348,6 +348,11 @@ original terminal once. The new start/stop commands can then manage the next ins
 
 ## Monitoring
 
+Terminal logs use aligned time, level, and agent columns. Event details use labeled fields
+such as `chosen=Read`, `confidence=98%`, and `jev=124ms`. Long messages wrap under the
+message column; narrow terminals show the details below the event header. Saved logs include
+the local date as well as the time. `logs --json` keeps the original machine-readable records.
+
 | Command | Shows |
 |---|---|
 | `doctor` | Installation, saved configuration, and gateway availability |

@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, op
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { configDirectory } from "./settings.js";
-import { stripVTControlCharacters } from "node:util";
+import { formatLog } from "./log-format.js";
 import { StringDecoder } from "node:string_decoder";
 
 export const eventLogPath = () => join(configDirectory(), "gateway.jsonl");
@@ -40,8 +40,8 @@ export function printLogLine(line: string, json: boolean): void {
     const item = JSON.parse(line);
     if (json) console.log(JSON.stringify(item));
     else {
-      const message = item.message ?? `chosen=${item.chosen} actual=${item.actual ?? "-"} mode=${item.mode} confidence=${item.confidence}`;
-      console.log(stripVTControlCharacters(`${item.ts}  ${item.agent}  ${item.level === "error" ? "ERROR " : ""}${message}`).replace(/[\x00-\x1f\x7f]/g, " "));
+      console.log(formatLog(item, { date: true, columns: process.stdout.columns,
+        color: Boolean(process.stdout.isTTY && process.env.NO_COLOR === undefined) }));
     }
   } catch { /* ignore an incomplete or malformed record */ }
 }

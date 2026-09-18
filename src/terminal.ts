@@ -1,7 +1,7 @@
-import { stripVTControlCharacters } from "node:util";
 import { recordEvent } from "./history.js";
+import { clean, formatLog } from "./log-format.js";
+export { clean } from "./log-format.js";
 
-export function clean(value: unknown): string { return stripVTControlCharacters(String(value)).replace(/[\x00-\x1f\x7f]/g, " "); }
 export function tint(text: string, code = 36): string {
   return process.stdout.isTTY && process.env.NO_COLOR === undefined ? `\x1b[${code}m${text}\x1b[0m` : text;
 }
@@ -17,6 +17,7 @@ export function notice(message: string, kind: "ok" | "info" | "error" = "info"):
 export function gatewayEvent(agent: string, message: string, error = false, quiet = false): void {
   recordEvent(agent, clean(message), error);
   if (quiet) return;
-  const clock = new Date().toLocaleTimeString("en-US", { hour12: false });
-  console.log(`  ${tint(clock, 90)}  ${tint(agent.padEnd(9), error ? 31 : 36)} ${clean(message)}`);
+  console.log(formatLog({ ts: new Date().toISOString(), agent, message, level: error ? "error" : "info" }, {
+    columns: process.stdout.columns, color: Boolean(process.stdout.isTTY && process.env.NO_COLOR === undefined),
+  }));
 }
