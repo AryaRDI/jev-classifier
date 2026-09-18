@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>jev-classifier</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa; --fg: #1a1a18; --muted: #6b6b66; --line: #e3e3df;
+    --card: #ffffff; --accent: #b4541e; --ok: #2f7d4f; --bad: #b03030;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a; --fg: #e8e8e4; --muted: #9a9a94; --line: #2e2e33;
+      --card: #1e1e22; --accent: #e08050; --ok: #64b581; --bad: #e07070;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 14px; margin: 32px 0 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  button, select, input {
+    font: inherit; color: inherit; background: var(--card);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
+  }
+  button { cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 22px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .tag { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+  .empty { color: var(--muted); padding: 24px 0; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>jev-classifier</h1>
+    <span class="tag" id="source"></span>
+    <span style="flex:1"></span>
+    <button id="lang" type="button">pt-BR</button>
+    <button id="reload" type="button" data-t="reload">Reload</button>
+  </header>
+  <p class="sub" id="summary"></p>
+
+  <div class="filters">
+    <select id="f-agent"></select>
+    <select id="f-model"></select>
+    <select id="f-mode"></select>
+    <select id="f-session"></select>
+    <input id="f-text" type="search" data-t-placeholder="search" />
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <h2 data-t="byGroup">By agent / model / mode</h2>
+  <div class="wrap"><table id="groups"></table></div>
+
+  <h2 data-t="decisions">Decisions</h2>
+  <div class="wrap"><table id="rows"></table></div>
+  <p class="empty" id="empty" hidden></p>
+
+  <footer data-t="footer"></footer>
+</main>
+
+<script>
+const T = {
+  en: {
+    reload: "Reload", search: "filter by tool…", byGroup: "By agent / model / mode",
+    decisions: "Decisions", allAgents: "all agents", allModels: "all models",
+    allModes: "all modes", allSessions: "all sessions",
+    count: "decisions", applied: "applied", gated: "gated", match: "match",
+    conf: "avg confidence", p50: "jev p50", p95: "jev p95",
+    agent: "agent", model: "model", mode: "mode", n: "n",
+    time: "time", session: "session", chosen: "chosen", actual: "actual",
+    done: "done", tools: "tools", jev: "jev ms", up: "upstream ms", top3: "top 3",
+    none: "No decisions yet. Start the proxy and point an agent at it.",
+    footer: "Reads .jev-classifier/decisions.jsonl. chosen = what Jev picked, actual = what the model called.",
+    summary: (n, f) => `${f} of ${n} decisions shown`,
+  },
+  pt: {
+    reload: "Recarregar", search: "filtrar por tool…", byGroup: "Por agente / modelo / modo",
+    decisions: "Decisões", allAgents: "todos os agentes", allModels: "todos os modelos",
+    allModes: "todos os modos", allSessions: "todas as sessões",
+    count: "decisões", applied: "aplicadas", gated: "gated", match: "acerto",
+    conf: "confiança média", p50: "jev p50", p95: "jev p95",
+    agent: "agente", model: "modelo", mode: "modo", n: "n",
+    time: "hora", session: "sessão", chosen: "escolhida", actual: "real",
+    done: "done", tools: "tools", jev: "jev ms", up: "upstream ms", top3: "top 3",
+    none: "Nenhuma decisão ainda. Suba o proxy e aponte um agente pra ele.",
+    footer: "Lê .jev-classifier/decisions.jsonl. chosen = escolha do Jev, actual = tool que o modelo chamou.",
+    summary: (n, f) => `${f} de ${n} decisões exibidas`,
+  },
+};
+
+let lang = localStorage.getItem("jev-lang") === "pt" ? "pt" : "en";
+let all = [];
+
+const $ = (id) => document.getElementById(id);
+const t = () => T[lang];
+
+async function load() {
+  const res = await fetch("decisions.jsonl", { cache: "no-store" });
+  const text = await res.text();
+  all = text.split("\n").filter((l) => l.trim()).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  $("source").textContent = `${all.length} lines`;
+  fillFilters();
+  render();
+}
+
+function fillFilters() {
+  const keys = [["f-agent", "agent", "allAgents"], ["f-model", "model", "allModels"], ["f-mode", "mode", "allModes"], ["f-session", "session", "allSessions"]];
+  for (const [id, field, label] of keys) {
+    const select = $(id);
+    const current = select.value;
+    const values = [...new Set(all.map((r) => r[field]).filter(Boolean))].sort();
+    select.innerHTML = `<option value="">${t()[label]}</option>` + values.map((v) => `<option>${esc(v)}</option>`).join("");
+    if (values.includes(current)) select.value = current;
+  }
+}
+
+function filtered() {
+  const text = $("f-text").value.trim().toLowerCase();
+  return all.filter((r) =>
+    (!$("f-agent").value || r.agent === $("f-agent").value) &&
+    (!$("f-model").value || r.model === $("f-model").value) &&
+    (!$("f-mode").value || r.mode === $("f-mode").value) &&
+    (!$("f-session").value || r.session === $("f-session").value) &&
+    (!text || `${r.chosen} ${r.actual ?? ""}`.toLowerCase().includes(text)));
+}
+
+const pct = (n, d) => (d ? Math.round((n / d) * 1000) / 10 : 0);
+const p = (rows, q) => {
+  if (!rows.length) return 0;
+  const s = rows.map((r) => r.jevMs).sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor((q / 100) * s.length))];
+};
+
+function stats(rows) {
+  const withActual = rows.filter((r) => r.actual !== undefined && r.actual !== null);
+  return {
+    count: rows.length,
+    applied: pct(rows.filter((r) => r.applied).length, rows.length),
+    gated: pct(rows.filter((r) => r.gated).length, rows.length),
+    match: withActual.length ? pct(withActual.filter((r) => r.match).length, withActual.length) : null,
+    conf: rows.length ? Math.round((rows.reduce((s, r) => s + r.confidence, 0) / rows.length) * 100) / 100 : 0,
+    p50: p(rows, 50),
+    p95: p(rows, 95),
+  };
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function render() {
+  for (const el of document.querySelectorAll("[data-t]")) el.textContent = t()[el.dataset.t];
+  for (const el of document.querySelectorAll("[data-t-placeholder]")) el.placeholder = t()[el.dataset.tPlaceholder];
+  $("lang").textContent = lang === "en" ? "pt-BR" : "EN";
+
+  const rows = filtered();
+  $("summary").textContent = t().summary(all.length, rows.length);
+  $("empty").hidden = rows.length > 0;
+  $("empty").textContent = t().none;
+
+  const s = stats(rows);
+  $("cards").innerHTML = [
+    [t().count, s.count], [t().applied, `${s.applied}%`], [t().gated, `${s.gated}%`],
+    [t().match, s.match === null ? "-" : `${s.match}%`], [t().conf, s.conf],
+    [t().p50, `${s.p50}ms`], [t().p95, `${s.p95}ms`],
+  ].map(([k, v]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+
+  const groups = new Map();
+  for (const r of rows) {
+    const key = `${r.agent}|${r.model}|${r.mode}`;
+    let list = groups.get(key);
+    if (!list) groups.set(key, (list = []));
+    list.push(r);
+  }
+  const head = (cells) => `<thead><tr>${cells.map((c) => `<th class="${c[1] ?? ""}">${esc(c[0])}</th>`).join("")}</tr></thead>`;
+  $("groups").innerHTML =
+    head([[t().agent], [t().model], [t().mode], [t().n, "num"], [t().applied, "num"], [t().gated, "num"], [t().match, "num"], [t().conf, "num"], [t().p50, "num"], [t().p95, "num"]]) +
+    "<tbody>" + [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([key, list]) => {
+      const g = stats(list);
+      const [agent, model, mode] = key.split("|");
+      return `<tr><td>${esc(agent)}</td><td>${esc(model)}</td><td>${esc(mode)}</td>` +
+        `<td class="num">${g.count}</td><td class="num">${g.applied}%</td><td class="num">${g.gated}%</td>` +
+        `<td class="num">${g.match === null ? "-" : g.match + "%"}</td><td class="num">${g.conf}</td>` +
+        `<td class="num">${g.p50}</td><td class="num">${g.p95}</td></tr>`;
+    }).join("") + "</tbody>";
+
+  $("rows").innerHTML =
+    head([[t().time], [t().agent], [t().mode], [t().session], [t().chosen], [t().actual], [t().conf, "num"], [t().done, "num"], [t().tools, "num"], [t().jev, "num"], [t().up, "num"], [t().top3]]) +
+    "<tbody>" + rows.slice(-300).reverse().map((r) => {
+      const cls = r.actual === undefined || r.actual === null ? "" : r.match ? "ok" : "bad";
+      return `<tr><td>${esc((r.ts ?? "").replace("T", " ").slice(0, 19))}</td><td>${esc(r.agent)}</td>` +
+        `<td>${esc(r.mode)}${r.gated ? " ·gated" : ""}${r.truncated ? " ·cut" : ""}</td><td>${esc(r.session)}</td>` +
+        `<td>${esc(r.chosen)}</td><td class="${cls}">${esc(r.actual ?? "-")}</td>` +
+        `<td class="num">${Math.round(r.confidence * 100) / 100}</td><td class="num">${Math.round(r.done * 100) / 100}</td>` +
+        `<td class="num">${r.toolsCount}</td><td class="num">${r.jevMs}</td><td class="num">${r.upstreamMs}</td>` +
+        `<td>${esc((r.top3 ?? []).map((x) => `${x.name} ${x.p}`).join(", "))}</td></tr>`;
+    }).join("") + "</tbody>";
+}
+
+$("lang").onclick = () => { lang = lang === "en" ? "pt" : "en"; localStorage.setItem("jev-lang", lang); fillFilters(); render(); };
+$("reload").onclick = load;
+for (const id of ["f-agent", "f-model", "f-mode", "f-session"]) $(id).onchange = render;
+$("f-text").oninput = render;
+load();
+</script>
+</body>
+</html>

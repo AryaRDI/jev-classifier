@@ -1,0 +1,36 @@
+{
+  "name": "jev-classifier",
+  "version": "0.1.0",
+  "description": "Local proxy that asks Jev which tool an agent should call next and forces it via tool_choice.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "jev-classifier": "dist/cli.js"
+  },
+  "files": [
+    "assets",
+    "dist",
+    "ui",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test \"dist/test/*.test.js\"",
+    "start": "node dist/cli.js serve"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.5",
+    "typescript": "^5.9.3"
+  }
+}
