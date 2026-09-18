@@ -34,7 +34,7 @@ test("anthropic: request -> RouterState", () => {
   assert.deepEqual(parsed.state, {
     user_request: USER,
     assistant_said: [SAID],
-    actions_taken: [{ step: 1, tool: "Read", input: { file_path: "src/util.ts" }, result: RESULT }],
+    actions_taken: [{ step: 1, tool: "Read", input: JSON.stringify({ file_path: "src/util.ts" }), result: RESULT }],
   });
 });
 

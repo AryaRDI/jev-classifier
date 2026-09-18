@@ -145,10 +145,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, options: ServeO
 
   const parsed = adapter.parse(body);
 
-  // No tools in the request: nothing to route.
+  // No tools in the request: nothing to route. Expected on a final answer turn.
   if (parsed.options.length === 0) {
     status.noTools++;
-    report("Skipped: no supported tools. Request preserved.");
+    report(`No tools in request (model=${parsed.model}). Pass-through.`);
     await pipeUpstream(req, res, raw, route, undefined);
     return;
   }
@@ -195,6 +195,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, options: ServeO
       upstreamMs: 0,
       toolsCount: parsed.options.length,
       applied,
+      ...(decision.group ? { group: decision.group, stages: [...decision.stages ?? []] } : {}),
+      ...(decision.tokens ? { tokensIn: decision.tokens.in, tokensOut: decision.tokens.out } : {}),
       ...(parsed.shadowReason ? { shadowReason: parsed.shadowReason } : {}),
     };
     if (agent) {
@@ -202,7 +204,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, options: ServeO
       delete agent.lastError;
       agent.lastDecision = { tool: decision.tool, mode, applied, at: record.ts };
     }
-    report(`Decision | chosen=${decision.tool} | confidence=${Math.round(decision.confidence * 100)}% | jev=${decision.latencyMs}ms | result=${applied ? "applied" : mode === "shadow" ? "observed" : "hint"}`);
+    const stageInfo = decision.stages && decision.stages.length > 1 ? ` | stages=${decision.stages.join("+")}ms` : "";
+    const tokenInfo = decision.tokens ? ` | tokens=${decision.tokens.in}in/${decision.tokens.out}out` : "";
+    report(`Decision | chosen=${decision.tool} | confidence=${Math.round(decision.confidence * 100)}% | jev=${decision.latencyMs}ms${decision.group ? ` | group=${decision.group}` : ""}${stageInfo}${tokenInfo} | result=${applied ? "applied" : mode === "shadow" ? "observed" : "hint"}`);
   } catch (err) {
     status.classificationFailures++;
     if (agent) { agent.failures++; agent.lastError = (err as Error).message; }
@@ -226,10 +230,18 @@ async function pipeUpstream(
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   if (hasBody) headers.set("content-length", String(body.byteLength));
 
+  const send = () => fetch(route.target, { method: req.method, headers, body: hasBody ? new Uint8Array(body) : undefined, redirect: "manual", signal: abort.signal });
   const started = performance.now();
   let upstream: Response;
   try {
-    upstream = await fetch(route.target, { method: req.method, headers, body: hasBody ? new Uint8Array(body) : undefined, redirect: "manual", signal: abort.signal });
+    upstream = await send();
+    // One retry on rate limit: a single 429 should not fail the agent's turn.
+    if (upstream.status === 429 && !abort.signal.aborted) {
+      await upstream.body?.cancel();
+      gatewayEvent("upstream", `Provider rate limit (429) on ${route.target}. Retrying once in 1s.`, true, tap?.quiet);
+      await new Promise((r) => setTimeout(r, 1000));
+      upstream = await send();
+    }
   } catch (err) {
     res.writeHead(502, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { type: "jev_upstream_error", message: (err as Error).message } }));
@@ -238,7 +250,7 @@ async function pipeUpstream(
   }
 
   const outHeaders: Record<string, string> = {};
-  if (!upstream.ok) gatewayEvent("upstream", `Provider returned HTTP ${upstream.status}. ${upstream.status === 401 ? "Check the agent's login; classifier credentials are separate." : "The response is being passed back to the agent."}`, true, tap?.quiet);
+  if (!upstream.ok) gatewayEvent("upstream", `Provider returned HTTP ${upstream.status} for ${route.target}. ${upstream.status === 401 ? "Check the agent's login; classifier credentials are separate." : upstream.status === 404 ? "Check the upstream base URL (UPSTREAM / agent upstream env var); the path does not exist there." : "The response is being passed back to the agent."}`, true, tap?.quiet);
   upstream.headers.forEach((value, key) => {
     // fetch already decoded the body, so the upstream length/encoding no longer apply.
     if (key === "content-encoding" || key === "content-length" || HOP_BY_HOP.has(key)) return;

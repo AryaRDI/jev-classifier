@@ -37,6 +37,8 @@ export interface Evaluation {
   probabilities: Record<string, number>;
   confidence: number;
   done: number;
+  /** Token usage reported by the provider, when available. */
+  usage?: { input_tokens: number; output_tokens: number };
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -76,11 +78,18 @@ function normalize(value: unknown, input: EvaluationInput, provider: string): Ev
 /** Classifier transport only: never receives the coding agent's headers or credentials. */
 export async function evaluateJev(input: EvaluationInput, config: Config = jevConfig(), request: typeof fetch = fetch): Promise<Evaluation> {
   if (!config.apiKey) throw new Error(`Set ${config.keyVariable} or JEV_API_KEY for JEV_PROVIDER=${config.provider} (or JEV_STUB=1 for an offline test).`);
+  if (process.env.JEV_DEBUG === "1") {
+    const payload = JSON.stringify({ state: input.state, questions: { next_tool: { instructions: input.instructions, criteria: input.criteria }, done: { instructions: input.doneInstructions } } });
+    const crit = input.criteria;
+    console.error(`[jev-debug] labels=${Object.keys(crit).length} payloadChars=${payload.length} stateChars=${JSON.stringify(input.state).length} critChars=${Object.values(crit).join("").length}`);
+  }
   if (config.provider === "typesafe") {
     const client = new TypeSafeClient({ apiKey: config.apiKey });
     const result = await client.systemOne({ model: config.model, state: input.state,
       questions: { next_tool: choice(input.instructions, input.criteria), done: noul(input.doneInstructions) } });
-    return normalize(result, input, config.provider);
+    const evaluation = normalize(result, input, config.provider);
+    if (result.usage) evaluation.usage = { input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens };
+    return evaluation;
   }
   const vercel = config.provider === "vercel";
   const headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` };
