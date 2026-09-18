@@ -1,6 +1,6 @@
 {
   "name": "jev-classifier",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local proxy that asks Jev which tool an agent should call next and forces it via tool_choice.",
   "license": "MIT",
   "keywords": [
