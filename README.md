@@ -24,6 +24,10 @@ the tool your agent calls. Every decision goes into a log you can review.
 
 Keep using your agent's model and login. Configure a separate key for Jev during setup.
 
+The original idea and inspiration for jev-classifier come from
+[jev-eval-agent](https://github.com/vinilana/jev-eval-agent) by [vinilana](https://github.com/vinilana).
+This project brings that approach to a local gateway and MCP tools for coding agents.
+
 | Connection | Agents | How it works |
 |---|---|---|
 | Proxy | Codex, Claude Code, Grok Build, OpenCode | Requests pass through jev-classifier on their way to the model |
