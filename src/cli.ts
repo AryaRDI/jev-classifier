@@ -5,9 +5,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { agentConfig } from "./config.js";
 import { createServer } from "./server.js";
 import { jevConfig, jevStatus } from "./jev.js";
-import { configFile, loadSettings, publicSettings, readSettings, SETTING_LABELS, validateSettings, type Settings } from "./settings.js";
+import { configFile, loadSettings, publicSettings, readSettings, saveSettings, SETTING_LABELS, validateSettings, type Settings } from "./settings.js";
 import { doctor, readHealth, showHealth } from "./diagnostics.js";
-import { executable, launchAgent, launchPlan } from "./agents.js";
+import { directLaunchPlan, executable, launchAgent, launchPlan } from "./agents.js";
 import { clean, gatewayEvent, heading, notice, row } from "./terminal.js";
 import { eventLogPath, showLogs } from "./history.js";
 import { newRuntime, openLogWindow, removeRuntime, saveRuntime, setStartup, startGateway, startupStatus, stopGateway } from "./service.js";
@@ -34,6 +34,7 @@ const HELP = `
     jev-classifier ui                   Dashboard server on port 8090
 
   Configure
+    jev-classifier proxy [on|off|status] Use or bypass Jev for future agent launches
     jev-classifier settings             Edit preferences (interactive terminal)
     jev-classifier config <agent>        Print manual connection instructions
     jev-classifier startup              Configure automatic desktop sign-in startup
@@ -45,6 +46,7 @@ const HELP = `
     --port NUMBER     Override the gateway port (default 8080)
     --auth MODE       oauth (existing login) or api-key
     --shadow          Observe without changing agent requests
+    --no-proxy        Open the agent without Jev (run only)
     --json            Machine-readable status, settings or doctor output
     --log FILE        Decision log location
     --capture         Save sanitized request captures (serve only)
@@ -89,7 +91,7 @@ async function main(): Promise<void> {
   const extra = separator < 0 ? [] : argv.slice(separator + 1);
   const parsed = parseArgs({ args: separator < 0 ? argv : argv.slice(0, separator), allowPositionals: true, strict: true, options: {
     help: { type: "boolean", short: "h" }, port: { type: "string" }, auth: { type: "string" }, shell: { type: "string" }, client: { type: "string" },
-    log: { type: "string" }, upstream: { type: "string" }, shadow: { type: "boolean" }, capture: { type: "boolean" },
+    log: { type: "string" }, upstream: { type: "string" }, shadow: { type: "boolean" }, capture: { type: "boolean" }, "no-proxy": { type: "boolean" },
     global: { type: "boolean" }, "env-file": { type: "string" }, json: { type: "boolean" }, check: { type: "boolean" }, watch: { type: "boolean" }, "no-color": { type: "boolean" },
     foreground: { type: "boolean" }, follow: { type: "boolean" }, lines: { type: "string" }, decisions: { type: "boolean" }, "startup-launch": { type: "boolean" },
   } });
@@ -100,7 +102,8 @@ async function main(): Promise<void> {
   const sources = loadSettings(flags.global, flags["env-file"]);
   const command = parsed.positionals[0] || (process.stdin.isTTY && process.stdout.isTTY ? await home() : "help");
   if (extra.length && command !== "run") throw new Error("Arguments after -- are only supported by run.");
-  if (flags.json && !["status", "doctor", "settings", "logs", "startup"].includes(command)) throw new Error("--json is supported by status, doctor, settings, logs and startup.");
+  if (flags["no-proxy"] && command !== "run") throw new Error("--no-proxy is only supported by run.");
+  if (flags.json && !["status", "doctor", "settings", "logs", "startup", "proxy"].includes(command)) throw new Error("--json is supported by status, doctor, settings, logs, startup and proxy.");
   if (flags.log) process.env.JEV_LOG = flags.log;
   if (flags.shadow) process.env.JEV_MODE = "shadow";
   if (flags.upstream) process.env.UPSTREAM = flags.upstream;
@@ -114,6 +117,21 @@ async function main(): Promise<void> {
     ...(flags.log ? ["--log", flags.log] : []), ...(flags.capture ? ["--capture"] : []),
     ...(flags.upstream ? ["--upstream", flags.upstream] : [])];
   switch (command) {
+    case "proxy": {
+      let action = parsed.positionals[1];
+      if (!action && process.stdin.isTTY && !flags.json) action = await (await import("./setup.js")).proxyMenu(process.env.JEV_PROXY !== "0");
+      action ||= "status";
+      if (!["on", "off", "status"].includes(action)) throw new Error("Use proxy on, proxy off, or proxy status.");
+      if (action !== "status") saveSettings({ ...readSettings(), JEV_PROXY: action === "on" ? "1" : "0" });
+      const savedEnabled = readSettings().JEV_PROXY !== "0";
+      const enabled = action === "status" ? process.env.JEV_PROXY !== "0" : savedEnabled;
+      if (flags.json) console.log(JSON.stringify({ enabled, savedEnabled }));
+      else {
+        notice(`Jev proxy ${enabled ? "on" : "off"}${action === "status" ? "" : " (saved for future agent launches)"}.`, "ok");
+        if (action !== "status") notice("Restart agents to apply. Existing sessions, the running gateway and desktop startup are unchanged. Environment and --env-file overrides take precedence over this preference.");
+      }
+      break;
+    }
     case "help": console.log(HELP); break;
     case "mcp": await (await import("./mcp.js")).serveMcp(flags.client || "cursor"); break;
     case "connect": {
@@ -202,6 +220,14 @@ async function main(): Promise<void> {
     }
     case "run": {
       const agent = selectedAgent;
+      if (flags["no-proxy"] || (process.env.JEV_PROXY === "0" && !isEditor(agent))) {
+        const plan = directLaunchPlan(agent);
+        const file = executable(agent);
+        if (!file) throw new Error(`${agent} was not found on PATH. Install the official agent, then run this command again.`);
+        notice(`Opening ${agent} without Jev. The agent manages its own authentication.`);
+        process.exitCode = await launchAgent(file, plan, extra);
+        break;
+      }
       if (isEditor(agent)) {
         const result = connectEditor(agent);
         notice(`MCP configured for ${agent}: ${result.file}`, "ok");

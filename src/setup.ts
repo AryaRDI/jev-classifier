@@ -112,7 +112,8 @@ export async function setup(localKeys: string[]): Promise<void> {
 export async function home(): Promise<string> {
   p.intro("jev-classifier");
   const command = await answer(p.select({ message: "What would you like to do?", options: [
-    { value: "run", label: "Open an agent", hint: "connect through the gateway" },
+    { value: "run", label: "Open an agent", hint: process.env.JEV_PROXY === "0" ? "without Jev" : "connect through the gateway" },
+    { value: "proxy", label: "Turn Jev proxy on or off", hint: "choose how future agent sessions connect" },
     { value: "connect", label: "Connect an editor", hint: "Cursor or Antigravity via MCP advice" },
     { value: "setup", label: "Configure", hint: "provider, keys, agent and routing" },
     { value: "serve", label: "Start the gateway", hint: "separate window; this terminal stays free" },
@@ -136,6 +137,14 @@ export async function startupMenu(enabled: boolean): Promise<string> {
   ] }));
   p.outro("Startup preference");
   return action;
+}
+
+export async function proxyMenu(enabled: boolean): Promise<string> {
+  return answer(p.select({ message: `Jev proxy is ${enabled ? "on" : "off"}. Apply to future agent launches:`, options: [
+    { value: "off", label: "Off", hint: "run agents without Jev or its gateway" },
+    { value: "on", label: "On", hint: "route agent requests through Jev" },
+    { value: "status", label: "Keep current setting" },
+  ] }));
 }
 
 export async function selectEditor(): Promise<string> {

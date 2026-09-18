@@ -38,14 +38,61 @@ This project brings that approach to a local gateway and MCP tools for coding ag
 
 ## Quick start
 
-### 1. Install and configure
+### 1. Install
 
-You'll need Node.js 22 or newer. From this checkout, run:
+Install [Node.js 22 or newer](https://nodejs.org/), then install jev-classifier globally from npm:
 
 ```sh
-npm install
+npm install --global jev-classifier
+jev-classifier --help
+```
+
+The global install makes `jev-classifier` available from every project and keeps desktop startup
+entries tied to a stable installation. No repository checkout or build step is required.
+
+<details>
+<summary>Update or uninstall</summary>
+
+Install the latest release:
+
+```sh
+npm install --global jev-classifier@latest
+```
+
+Before uninstalling, stop the gateway and remove its optional desktop startup entry:
+
+```sh
+jev-classifier stop
+jev-classifier startup disable
+npm uninstall --global jev-classifier
+```
+
+If no gateway is running or startup was never enabled, the first two commands may report that
+there is nothing to stop or disable. Your saved settings and logs are left in place.
+
+</details>
+
+<details>
+<summary>Install from source</summary>
+
+Use this only when developing the project or testing unreleased changes:
+
+```sh
+git clone https://github.com/felpsdev/jev-classifier.git
+cd jev-classifier
+npm ci
 npm run build
 node dist/cli.js setup
+```
+
+In the commands below, replace `jev-classifier` with `node dist/cli.js` when running from source.
+
+</details>
+
+### 2. Configure
+
+```sh
+jev-classifier setup
 ```
 
 Setup walks you through choosing a Jev provider, entering its key, and picking your agent.
@@ -53,21 +100,9 @@ You don't need to set environment variables. Your choices are saved for all proj
 
 Choose **Observe** to watch Jev's decisions first. If you don't have a key yet, choose
 **Offline test** to check the connection without calling Jev. Review your settings, then save.
+Running `jev-classifier` without a command opens the interactive menu.
 
-<details>
-<summary>Global installation</summary>
-
-```sh
-npm install -g jev-classifier
-jev-classifier setup
-```
-
-</details>
-
-The examples below use `jev-classifier`. From a checkout, replace it with `node dist/cli.js`.
-Running either without a command opens the interactive menu.
-
-### 2. Connect an agent
+### 3. Connect an agent
 
 | Agent | Command |
 |---|---|
@@ -91,7 +126,7 @@ jev-classifier run codex -- --no-alt-screen
 
 For Cursor and Antigravity, open the editor and reload its MCP servers after connecting.
 
-### 3. Check that it works
+### 4. Check that it works
 
 ```sh
 jev-classifier doctor --check
@@ -184,6 +219,36 @@ the dashboard. The HTTP gateway's counters cover only proxy traffic.
 See [Cursor MCP](https://cursor.com/docs/mcp) and [Antigravity MCP](https://antigravity.google/docs/mcp).
 
 </details>
+
+## Run agents without Jev
+
+Turn the proxy off for future `run` commands, or bypass it for one session:
+
+```sh
+jev-classifier proxy off
+jev-classifier run claude
+jev-classifier run codex
+jev-classifier proxy on
+jev-classifier run claude --no-proxy
+jev-classifier proxy status
+```
+
+The main interactive menu also offers **Turn Jev proxy on or off**. The saved preference
+applies to Codex, Claude, Grok and OpenCode. Direct launches need no Jev key and do not
+start or contact its gateway. Agents manage their own authentication; `--auth` applies only
+to proxy launches. Codex uses its built-in `openai` provider in direct mode.
+
+Restart your agent to switch an existing session. Disabling the proxy does not stop a running
+gateway or change desktop startup; use `stop` and `startup disable` for those separately.
+Cursor and Antigravity use MCP instead of the proxy; disable their Jev entry in the editor's
+MCP settings to stop using it.
+
+Direct launches remove inherited Jev URLs from agent environment variables and OpenCode's
+inline provider settings, without changing the parent terminal. If you manually saved Jev
+URLs in Claude, Grok or OpenCode configuration files, remove those overrides there too.
+To launch Codex directly outside this wrapper, restore its `model_provider` from `jev` to
+`openai` in its configuration. Environment and explicit `--env-file` settings override the
+saved preference; `--no-proxy` always bypasses it for that launch.
 
 ## Where Jev runs
 
@@ -463,6 +528,7 @@ For Vercel, use `JEV_PROVIDER=vercel` and `AI_GATEWAY_API_KEY`. No upstream over
 | `JEV_MODEL` | provider-specific | Jev model ID override |
 | `JEV_STUB` | `0` | `1` routes without Jev, no API key needed |
 | `JEV_MODE` | `enforce` | `enforce` rewrites `tool_choice`; `shadow` only logs |
+| `JEV_PROXY` | `1` | `0` launches agents directly, without the Jev gateway |
 | `DONE_THRESHOLD` | `0.5` | minimum probability that the requested work is done |
 | `MIN_CONFIDENCE` | `0.5` | below this, no tool is forced |
 | `PORT` | `8080` | proxy port |

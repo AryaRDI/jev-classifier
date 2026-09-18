@@ -1,8 +1,23 @@
 {
   "name": "jev-classifier",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local proxy that asks Jev which tool an agent should call next and forces it via tool_choice.",
   "license": "MIT",
+  "keywords": [
+    "ai-agents",
+    "coding-agents",
+    "jev",
+    "mcp",
+    "tool-choice"
+  ],
+  "homepage": "https://github.com/felpsdev/jev-classifier#readme",
+  "bugs": {
+    "url": "https://github.com/felpsdev/jev-classifier/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/felpsdev/jev-classifier.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -21,7 +36,11 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test \"dist/test/*.test.js\"",
-    "start": "node dist/cli.js serve"
+    "start": "node dist/cli.js serve",
+    "prepack": "npm test"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",

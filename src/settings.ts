@@ -5,13 +5,14 @@ import { parseEnv } from "node:util";
 import * as tls from "node:tls";
 
 export const SETTING_KEYS = ["JEV_PROVIDER", "JEV_API_KEY", "TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY",
-  "JEV_MODEL", "JEV_MODE", "JEV_STUB", "PORT", "DONE_THRESHOLD", "MIN_CONFIDENCE", "JEV_LOG",
+  "JEV_MODEL", "JEV_MODE", "JEV_PROXY", "JEV_STUB", "PORT", "DONE_THRESHOLD", "MIN_CONFIDENCE", "JEV_LOG",
   "JEV_DEFAULT_AGENT", "JEV_AUTH", "JEV_SYSTEM_CA", "UPSTREAM", "UPSTREAM_API_KEY", "ANTHROPIC_UPSTREAM",
   "OPENAI_UPSTREAM", "XAI_UPSTREAM", "CLAUDE_OAUTH_UPSTREAM", "CODEX_OAUTH_UPSTREAM", "GROK_OAUTH_UPSTREAM",
   "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "XAI_API_KEY"] as const;
 export type Settings = Partial<Record<typeof SETTING_KEYS[number], string>>;
 export const isSecret = (key: string) => key.endsWith("API_KEY");
 export const SETTING_LABELS: Record<keyof Settings, string> = {
+  JEV_PROXY: "Use Jev proxy for agent launches",
   JEV_PROVIDER: "Jev provider", JEV_API_KEY: "Classifier key override", TYPESAFE_API_KEY: "TypeSafe key", OPENROUTER_API_KEY: "OpenRouter key", AI_GATEWAY_API_KEY: "Vercel Gateway key",
   JEV_MODEL: "Jev model", JEV_MODE: "Routing mode", JEV_STUB: "Offline test", PORT: "Gateway port", DONE_THRESHOLD: "Completion threshold", MIN_CONFIDENCE: "Minimum confidence",
   JEV_LOG: "Decision log file", JEV_DEFAULT_AGENT: "Default agent", JEV_AUTH: "Agent authentication", JEV_SYSTEM_CA: "Trust system certificates",
@@ -37,7 +38,7 @@ export function validateSettings(value: unknown): Settings {
     settings[key] = v;
   }
   for (const [key, allowed] of Object.entries({ JEV_PROVIDER: ["typesafe", "openrouter", "vercel"], JEV_MODE: ["shadow", "enforce"],
-    JEV_DEFAULT_AGENT: ["codex", "claude", "grok", "opencode", "cursor", "antigravity"], JEV_AUTH: ["oauth", "api-key"], JEV_STUB: ["0", "1"], JEV_SYSTEM_CA: ["0", "1"] })) {
+    JEV_DEFAULT_AGENT: ["codex", "claude", "grok", "opencode", "cursor", "antigravity"], JEV_AUTH: ["oauth", "api-key"], JEV_PROXY: ["0", "1"], JEV_STUB: ["0", "1"], JEV_SYSTEM_CA: ["0", "1"] })) {
     const v = settings[key as keyof Settings];
     if (v && !allowed.includes(v)) throw new Error(`${key} must be ${allowed.join(" or ")}.`);
   }
